@@ -1,0 +1,456 @@
+individual Solve_model_0(individual ind1)
+{
+	vector<vector<int>> Job_Ops;
+	Job_Ops.resize(problems[num_problem - 1].size());
+
+	for (int j = 0; j < ind1.OpSeque.size(); j++)
+	{
+		Job_Ops[Job_order_in_problems(ind1.OpSeque[j].Job)].push_back(ind1.OpSeque[j].Opera);
+	}
+	for (int i = 0; i < Job_Ops.size(); i++)
+		sort(Job_Ops[i].begin(), Job_Ops[i].end());
+	IloEnv env;
+	IloModel model(env);
+	//R[i][r][l] variables
+	map<tuple<int, int, int>, IloNumVar> R;
+	for (int i = 0; i < Num_Jobs; i++)
+	{
+		for (int r = 0; r < All[problems[num_problem - 1][i] - 1].NumofOrNode; r++)
+		{
+			for (int l = 0; l < 2; l++)
+			{
+				R[{problems[num_problem - 1][i] - 1, r, l}] = IloNumVar(env, 0, 1, IloNumVar::Int);
+				ostringstream os;
+				os << "R[" << problems[num_problem - 1][i] << "," << r + 1 << "," << l + 1 << "]";
+				R[{problems[num_problem - 1][i] - 1, r, l}].setName(os.str().c_str());
+				os.clear();
+			}
+		}
+	}
+	//X[i][j]
+	map<tuple<int, int>, IloNumVar> X;
+	for (int i = 0; i < Num_Jobs; i++)
+	{
+		for (int j = 0; j < All[problems[num_problem - 1][i] - 1].NumofOpera; j++)
+		{
+			X[{problems[num_problem - 1][i] - 1, j}] = IloNumVar(env, 0, 1, IloNumVar::Int);
+			ostringstream os;
+			os << "X[" << problems[num_problem - 1][i] << "," << j + 1 << "]";
+			X[{problems[num_problem - 1][i] - 1, j}].setName(os.str().c_str());
+			os.clear();
+		}
+	}
+	//S[i][j]
+	map<tuple<int, int>, IloNumVar> S;
+	for (int i = 0; i < Num_Jobs; i++)
+	{
+		for (int j = 0; j < All[problems[num_problem - 1][i] - 1].NumofOpera; j++)
+		{
+			S[{problems[num_problem - 1][i] - 1, j}] = IloNumVar(env, 0, IloInfinity, IloNumVar::Int);
+			ostringstream os;
+			os << "S[" << problems[num_problem - 1][i] << "," << j + 1 << "]";
+			S[{problems[num_problem - 1][i] - 1, j}].setName(os.str().c_str());
+			os.clear();
+		}
+	}
+	//cmax variable
+	IloNumVar cmax(env, 0, IloInfinity, IloNumVar::Int);
+	ostringstream os;
+	os << "Cmax";
+	cmax.setName(os.str().c_str());
+	os.clear();
+
+	//parameters
+	//P[i][j][k]
+	map<tuple<int, int, int>, int>  P;
+	for (int i = 0; i < ind1.OpSeque.size(); i++)
+	{
+		for (int k = 0; k < Num_Machs; k++)
+		{
+			if (All[ind1.OpSeque[i].Job].ProMach[ind1.OpSeque[i].Opera][k] == 1)
+			{
+				P[{ind1.OpSeque[i].Job, ind1.OpSeque[i].Opera, k}] = All[ind1.OpSeque[i].Job].ProTime[ind1.OpSeque[i].Opera][k];
+			}
+		}
+	}
+	//U[i][j][j] 
+	map<tuple<int, int, int>, int> U;
+	for (int i = 0; i < Num_Jobs; i++)
+	{
+		for (int j = 0; j < Job_Ops[i].size(); j++)
+		{
+			for (int jp = 0; jp < Job_Ops[i].size(); jp++)
+			{
+				if (jp != j)
+				{
+					U[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], Job_Ops[i][jp]}] = All[problems[num_problem - 1][i] - 1].Precedence[Job_Ops[i][j]][Job_Ops[i][jp]];
+				}
+			}
+		}
+	}
+	//W[i][j][r][l]
+	map<tuple<int, int, int, int>, int>  W;
+	for (int i = 0; i < Num_Jobs; i++)
+	{
+		for (int j = 0; j < All[problems[num_problem - 1][i] - 1].NumofOpera; j++)
+		{
+			for (int r = 0; r < All[problems[num_problem - 1][i] - 1].NumofOrNode; r++)
+			{
+				for (int l = 0; l < 2; l++)
+				{
+					for (int t = 0; t < All[problems[num_problem - 1][i] - 1].InfoNode[r][l].size(); t++)
+					{
+						if (j == All[problems[num_problem - 1][i] - 1].InfoNode[r][l][t])
+						{
+							W[{problems[num_problem - 1][i] - 1, j, r, l}] = 1;
+							break;
+						}
+						else
+						{
+							W[{problems[num_problem - 1][i] - 1, j, r, l}] = 0;
+						}
+					}
+				}
+			}
+		}
+	}
+	//Z[i][j][k]  variable
+	map<tuple<int, int, int>, IloNumVar>  Z;
+	for (int i = 0; i < ind1.OpSeque.size(); i++)
+	{
+		for (int k = 0; k < Num_Machs; k++)
+		{
+			if (All[ind1.OpSeque[i].Job].ProMach[ind1.OpSeque[i].Opera][k] == 1)
+			{
+				Z[{ind1.OpSeque[i].Job, ind1.OpSeque[i].Opera, k}] = IloNumVar(env, 0, 1, IloNumVar::Int);
+				ostringstream os;
+				os << "Z[" << ind1.OpSeque[i].Job + 1 << "," << ind1.OpSeque[i].Opera + 1 << "," << k + 1 << "]";
+				Z[{ind1.OpSeque[i].Job, ind1.OpSeque[i].Opera, k}].setName(os.str().c_str());
+				os.clear();
+			}
+		}
+	}
+	//Y[i][j][ip][jp]  variable
+	map<tuple<int, int, int, int>, IloNumVar>  Y;
+	for (int i = 0; i < Job_Ops.size(); i++)
+	{
+		for (int ip = i; ip < Job_Ops.size(); ip++)
+		{
+			if (problems[num_problem - 1][i] == problems[num_problem - 1][ip])
+			{
+				for (int j = 0; j < Job_Ops[i].size(); j++)
+				{
+					for (int jp = 0; jp < Job_Ops[i].size(); jp++)
+					{
+						if (Job_Ops[i][j] != Job_Ops[i][jp])
+						{
+							Y[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], problems[num_problem - 1][i] - 1, Job_Ops[i][jp]}] = IloNumVar(env, 0, 1, IloNumVar::Int);
+							ostringstream os;
+							os << "Y[" << problems[num_problem - 1][i] << "," << Job_Ops[i][j] + 1 << "," << problems[num_problem - 1][i] << "," << Job_Ops[i][jp] + 1 << "]";
+							Y[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], problems[num_problem - 1][i] - 1, Job_Ops[i][jp]}].setName(os.str().c_str());
+							os.clear();
+						}
+					}
+				}
+			}
+			else
+			{
+				for (int j = 0; j < Job_Ops[i].size(); j++)
+				{
+					for (int jp = 0; jp < Job_Ops[ip].size(); jp++)
+					{
+
+						Y[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], problems[num_problem - 1][ip] - 1, Job_Ops[ip][jp]}] = IloNumVar(env, 0, 1, IloNumVar::Int);
+						ostringstream os;
+						os << "Y[" << problems[num_problem - 1][i] << "," << Job_Ops[i][j] + 1 << "," << problems[num_problem - 1][ip] << "," << Job_Ops[ip][jp] + 1 << "]";
+						Y[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], problems[num_problem - 1][ip] - 1, Job_Ops[ip][jp]}].setName(os.str().c_str());
+						os.clear();
+					}
+				}
+			}
+		}
+	}
+
+	for (int i = 0; i < Num_Jobs; i++)
+	{
+		for (int r = 0; r < All[problems[num_problem - 1][i] - 1].NumofOrNode; r++)
+		{
+			IloNumExpr cons(env);
+			for (int l = 0; l < 2; l++)
+			{
+				cons += R[{problems[num_problem - 1][i] - 1, r, l}];
+			}
+			model.add(cons == 1);
+		}
+	}
+
+
+	for (int i = 0; i < Num_Jobs; i++)
+	{
+		for (int j = 0; j < All[problems[num_problem - 1][i] - 1].NumofOpera; j++)
+		{
+			for (int r = 0; r < All[problems[num_problem - 1][i] - 1].NumofOrNode; r++)
+			{
+				for (int l = 0; l < 2; l++)
+				{
+					model.add(X[{problems[num_problem - 1][i] - 1, j}] <= Big_M * (1 - W[{problems[num_problem - 1][i] - 1, j, r, l}]) + Big_M * R[{problems[num_problem - 1][i] - 1, r, l}]);
+				}
+			}
+		}
+	}
+
+
+	for (int i = 0; i < Num_Jobs; i++)
+	{
+		for (int j = 0; j < All[problems[num_problem - 1][i] - 1].NumofOpera; j++)
+		{
+			IloNumExpr cons(env);
+			for (int r = 0; r < All[problems[num_problem - 1][i] - 1].NumofOrNode; r++)
+			{
+				for (int l = 0; l < 2; l++)
+				{
+					cons += W[{problems[num_problem - 1][i] - 1, j, r, l}] * (1 - R[{problems[num_problem - 1][i] - 1, r, l}]);
+				}
+			}
+			model.add(X[{problems[num_problem - 1][i] - 1, j}] >= 1 - Big_M * cons);
+		}
+	}
+
+	for (int tt = 0; tt < ind1.OpSeque.size(); tt++)
+	{
+		IloNumExpr cons(env);
+		for (int k = 0; k < Num_Machs; k++)
+		{
+			if (All[ind1.OpSeque[tt].Job].ProMach[ind1.OpSeque[tt].Opera][k] == 1)
+			{
+				cons += Z[{ind1.OpSeque[tt].Job, ind1.OpSeque[tt].Opera, k}];
+			}
+		}
+		model.add(cons == X[{ind1.OpSeque[tt].Job, ind1.OpSeque[tt].Opera}]);
+	}
+
+	for (int i = 0; i < Num_Jobs; i++)
+	{
+		for (int j = 0; j < Job_Ops[i].size(); j++)
+		{
+			for (int jp = 0; jp < Job_Ops[i].size(); jp++)
+			{
+				if (U[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], Job_Ops[i][jp]}] == 1 && j != jp)
+					model.add(Y[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], problems[num_problem - 1][i] - 1, Job_Ops[i][jp]}] >= U[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], Job_Ops[i][jp]}]);
+			}
+		}
+	}
+
+	for (int i = 0; i < Num_Jobs; i++)
+	{
+		for (int j = 0; j < Job_Ops[i].size(); j++)
+		{
+			IloNumExpr cons(env);
+			for (int k = 0; k < Num_Machs; k++)
+			{
+				if (All[problems[num_problem - 1][i] - 1].ProMach[Job_Ops[i][j]][k] == 1)
+				{
+					cons += P[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], k}] * Z[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], k}];
+				}
+			}
+			for (int jp = 0; jp < Job_Ops[i].size(); jp++)
+			{
+				if (Job_Ops[i][j] != Job_Ops[i][jp])
+				{
+					IloNumExpr cons1(env);
+					for (int k = 0; k < Num_Machs; k++)
+					{
+						if (All[problems[num_problem - 1][i] - 1].ProMach[Job_Ops[i][jp]][k] == 1)
+						{
+							cons1 += P[{problems[num_problem - 1][i] - 1, Job_Ops[i][jp], k}] * Z[{problems[num_problem - 1][i] - 1, Job_Ops[i][jp], k}];
+						}
+					}
+					model.add(S[{problems[num_problem - 1][i] - 1, Job_Ops[i][jp]}] >= S[{problems[num_problem - 1][i] - 1, Job_Ops[i][j]}] + cons - Big_M * (3 - X[{problems[num_problem - 1][i] - 1, Job_Ops[i][j]}] - X[{problems[num_problem - 1][i] - 1, Job_Ops[i][jp]}] - Y[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], problems[num_problem - 1][i] - 1, Job_Ops[i][jp]}]));
+					model.add(S[{problems[num_problem - 1][i] - 1, Job_Ops[i][j]}] >= S[{problems[num_problem - 1][i] - 1, Job_Ops[i][jp]}] + cons1 - Big_M * (2 - X[{problems[num_problem - 1][i] - 1, Job_Ops[i][j]}] - X[{problems[num_problem - 1][i] - 1, Job_Ops[i][jp]}] + Y[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], problems[num_problem - 1][i] - 1, Job_Ops[i][jp]}]));
+				}
+			}
+		}
+	}
+
+	for (int i = 0; i < Job_Ops.size(); i++)
+	{
+		for (int ip = i + 1; ip < Job_Ops.size(); ip++)
+		{
+			for (int j = 0; j < Job_Ops[i].size(); j++)
+			{
+				for (int jp = 0; jp < Job_Ops[ip].size(); jp++)
+				{
+					for (int k = 0; k < Num_Machs; k++)
+					{
+						if (All[problems[num_problem - 1][i] - 1].ProMach[Job_Ops[i][j]][k] == 1 && All[problems[num_problem - 1][ip] - 1].ProMach[Job_Ops[ip][jp]][k] == 1)
+						{
+							model.add(S[{problems[num_problem - 1][ip] - 1, Job_Ops[ip][jp]}] >= S[{problems[num_problem - 1][i] - 1, Job_Ops[i][j]}] + P[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], k}] - Big_M * (3 - Z[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], k}] - Z[{problems[num_problem - 1][ip] - 1, Job_Ops[ip][jp], k}] - Y[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], problems[num_problem - 1][ip] - 1, Job_Ops[ip][jp]}]));
+							model.add(S[{problems[num_problem - 1][i] - 1, Job_Ops[i][j]}] >= S[{problems[num_problem - 1][ip] - 1, Job_Ops[ip][jp]}] + P[{problems[num_problem - 1][ip] - 1, Job_Ops[ip][jp], k}] - Big_M * (2 - Z[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], k}] - Z[{problems[num_problem - 1][ip] - 1, Job_Ops[ip][jp], k}] + Y[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], problems[num_problem - 1][ip] - 1, Job_Ops[ip][jp]}]));
+						}
+					}
+				}
+			}
+		}
+	}
+
+	for (int i = 0; i < Num_Jobs; i++)
+	{
+		for (int j = 0; j < All[problems[num_problem - 1][i] - 1].NumofOpera; j++)
+		{
+			IloNumExpr cons(env);
+			for (int k = 0; k < Num_Machs; k++)
+			{
+				if (All[problems[num_problem - 1][i] - 1].ProMach[Job_Ops[i][j]][k] == 1)
+				{
+					cons += P[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], k}] * Z[{problems[num_problem - 1][i] - 1, Job_Ops[i][j], k}];
+				}
+			}
+			model.add(S[{problems[num_problem - 1][i] - 1, j}] <= Big_M * X[{problems[num_problem - 1][i] - 1, j}]);
+
+			if (sumXvector(All[problems[num_problem - 1][i] - 1].Precedence, j) == 0)
+			{
+				model.add(cmax >= S[{problems[num_problem - 1][i] - 1, j}] + cons - Big_M * (1 - X[{problems[num_problem - 1][i] - 1, j}]));
+			}
+		}
+	}
+	// Objective function
+	IloNumExpr obj(env);
+	obj = cmax;
+	model.add(IloMinimize(env, obj));
+	// Create the solver object and pass the model to it
+	IloCplex cplex(model);
+	// Save the model in "model.lp"
+	cplex.exportModel("model.lp");
+
+	// Solve the model
+	cplex.setParam(IloCplex::Param::TimeLimit, CpuTime);
+	cplex.setParam(IloCplex::Param::MIP::Tolerances::Integrality, 0.0);
+	cplex.solve();
+	cout << "Objective = " << cplex.getObjValue() << std::endl;
+	objective = cplex.getObjValue();
+
+	int ORseque_count = 0;
+	for (int i = 0; i < Num_Jobs; i++)
+	{
+		for (int r = 0; r < All[problems[num_problem - 1][i] - 1].NumofOrNode; r++)
+		{
+			for (int l = 0; l < 2; l++)
+			{
+				cout << "R[" << problems[num_problem - 1][i] << ", " << r + 1 << ", " << l + 1 << "] =" << cplex.getValue(R[{problems[num_problem - 1][i] - 1, r, l}]) << endl;
+				if (cplex.getValue(R[{problems[num_problem - 1][i] - 1, r, l}]) >= 0.5)
+				{
+					ind1.OrSeque[ORseque_count] = l;
+				}
+			}
+			ORseque_count++;
+		}
+	}
+
+	ind1.decoding();
+	for (int tt = 0; tt < ind1.OpSeque1.size(); tt++)
+	{
+		SCtime[{ind1.OpSeque1[tt].Job, ind1.OpSeque1[tt].Opera}] = cplex.getValue(S[{ind1.OpSeque1[tt].Job, ind1.OpSeque1[tt].Opera}]);
+	}
+	sort(ind1.OpSeque1.begin(), ind1.OpSeque1.end(), compare_Op_time);
+	int temp_order = 0, count = 0;
+	bool temp;
+	for (int i = 0; i < Num_Jobs; i++)
+	{
+		for (int j = 0; j < All[problems[num_problem - 1][i] - 1].NumofOrNode; j++)
+		{
+			if (ind1.OrSeque[count] == 0)
+			{
+				for (int kk = 0; kk < All[problems[num_problem - 1][i] - 1].InfoNode[j][1].size(); kk++)
+				{
+					Op_Gene ttemp;
+					ttemp.Job = problems[num_problem - 1][i] - 1;
+					ttemp.Opera = All[problems[num_problem - 1][i] - 1].InfoNode[j][1][kk];
+					if (find_seque(ttemp, ind1.OpSeque1, temp_order) == false)
+					{
+						for (int k = 0; k < All[problems[num_problem - 1][i] - 1].NumofOpera; k++)
+						{
+							if (All[ttemp.Job].Precedence[k][ttemp.Opera] == 1)
+							{
+								Op_Gene pre;
+								pre.Job = problems[num_problem - 1][i] - 1;
+								pre.Opera = k;
+								if (find_seque(pre, ind1.OpSeque1, temp_order))
+								{
+									ind1.OpSeque1.insert(ind1.OpSeque1.begin() + temp_order + 1, ttemp);
+									break;
+								}
+							}
+						}
+					}
+				}
+			}
+			else if (ind1.OrSeque[count] == 1)
+			{
+				for (int kk = 0; kk < All[problems[num_problem - 1][i] - 1].InfoNode[j][0].size(); kk++)
+				{
+					Op_Gene ttemp;
+					ttemp.Job = problems[num_problem - 1][i] - 1;
+					ttemp.Opera = All[problems[num_problem - 1][i] - 1].InfoNode[j][0][kk];
+					if (find_seque(ttemp, ind1.OpSeque1, temp_order) == false)
+					{
+						for (int k = 0; k < All[problems[num_problem - 1][i] - 1].NumofOpera; k++)
+						{
+							if (All[problems[num_problem - 1][i] - 1].Precedence[k][All[problems[num_problem - 1][i] - 1].InfoNode[j][0][kk]] == 1)
+							{
+								Op_Gene pre;
+								pre.Job = problems[num_problem - 1][i] - 1;
+								pre.Opera = k;
+								if (find_seque(pre, ind1.OpSeque1, temp_order))
+								{
+									ind1.OpSeque1.insert(ind1.OpSeque1.begin() + temp_order + 1, ttemp);
+									break;
+								}
+							}
+						}
+					}
+				}
+			}
+			count++;
+		}
+	}
+	ind1.OpSeque = ind1.OpSeque1;
+
+	Op_Gene temp_M;
+	for (int tt = 0; tt < ind1.OpSeque1.size(); tt++)
+	{
+		temp_M.Job = ind1.OpSeque1[tt].Job;
+		temp_M.Opera = ind1.OpSeque1[tt].Opera;
+		for (int k = 0; k < Num_Machs; k++)
+		{
+			if (All[temp_M.Job].ProMach[temp_M.Opera][k] == 1 && cplex.getValue(Z[{temp_M.Job, temp_M.Opera, k}]) >= 0.5)
+			{
+				ind1.MaSeque[ind1.transOpToOrder(temp_M)] = ind1.Order_machine(k, temp_M);
+				break;
+			}
+		}
+	}
+	
+	for (int i = 0; i < Num_Jobs; i++)
+	{
+		for (int j = 0; j < All[problems[num_problem - 1][i] - 1].NumofOpera; j++)
+		{
+			int time_temp = 0;
+			for (int k = 0; k < Num_Machs; k++)
+			{
+				if (All[problems[num_problem - 1][i] - 1].ProMach[Job_Ops[i][j]][k] == 1)
+				{
+					time_temp += P[{problems[num_problem - 1][i] - 1, j, k}] * cplex.getValue(Z[{problems[num_problem - 1][i] - 1, j, k}]);
+				}
+			}
+			cout << "C[" << problems[num_problem - 1][i] << ", " << j + 1 << "] =" << cplex.getValue(S[{problems[num_problem - 1][i] - 1, j}]) + time_temp << "   ";
+		}
+		cout << endl;
+
+
+	}
+	cplex.end();
+	model.end();
+	env.end();
+	ind1.decoding();
+	return ind1;
+}
